@@ -1,20 +1,27 @@
 #include <WiFi.h>
 #include <NTPClient.h>
+#include <PubSubClient.h>
 
 #include <WiFiUdp.h>
 #include "RTClib.h"
-
 
 TaskHandle_t Task1;
 RTC_DS1307 rtc;
 
 // =================== INTERRUPTS E CONSUMI =======================
+int i,j,k;
+unsigned long prev_millis;
+int toll = 0;
+DateTime cur_ts;
+bool consumo_b;
+  
 struct impulso {
   DateTime t;
   unsigned long dur;
 };
+
 struct consumo {
-  String  t;
+  DateTime  t;
   int     w;
   bool    sent;
 };
@@ -89,9 +96,18 @@ void IRAM_ATTR ap4_int() {
 }
 
 // =================== FINE INTERRUPTS E CONSUMI =======================
-
 const char* ssid     = "ssid";
 const char* password = "password";
+
+// Topic MQTT
+char* mqtt_server = "192.168.1.14";
+char* clientID = "Building0Test"; 
+char* outTopic_Ap1 = "N/121";
+char* outTopic_Ap2 = "N/122";
+char* outTopic_Ap3 = "N/123";
+char* outTopic_Ap4 = "N/124";
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 void setupWiFi() {
   Serial.printf("Connecting to: %s\n", ssid);
@@ -132,15 +148,17 @@ void syncTimeWithNTP() {
     rtc.adjust(DateTime((timeinfo.tm_year - 100), timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
 }
 
-void setup() {
+void setup() { 
   Serial.begin(115200);
 
   setupWiFi();
   setupRTC();
   syncTimeWithNTP();
+  
+  client.setServer(mqtt_server, 1883);
 
   Serial.print("ORA RTC: ");
-  Serial.print(rtc.now().timestamp());
+  Serial.println(rtc.now().timestamp());
 
   pinMode(14, INPUT);
   pinMode(12, INPUT);
@@ -153,17 +171,16 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(15), ap4_int, FALLING);
 
   xTaskCreate (
-    setTimeInt1,    // Function that should be called
+    setTimeInt,    // Function that should be called
     "Task1",   // Name of the task (for debugging)
-    1000,            // Stack size (bytes)
+    20000,            // Stack size (bytes)
     NULL,            // Parameter to pass
     1,               // Task priority
     NULL             // Task handle
   );
-  delay(500);
 }
 
-void setTimeInt1( void * parameter ) {
+void setTimeInt( void * parameter ) {
   //Serial.print("Task1 running on core ");
   //Serial.println(xPortGetCoreID());
   for (;;) {
@@ -197,7 +214,96 @@ void setTimeInt1( void * parameter ) {
   }
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
+void sendMqttData(char* topic, consumo consumi[], int dim){
+  char buffer0[30];
+  String payload;
+  int i=0;
+  
+  while ((!client.connected()) && (i<3)) {
+    Serial.println("Client disconnesso da MQTT.. provo la riconnessione :");
+    delay(1000);
+    client.connect(clientID);
+    i++;
+  }
+  if (client.connected()) {
+    Serial.println("Mi sono collegato al broker MQTT:");
+    Serial.println("Invio vettori in corso...");
+    for(int j=0; j<dim; j++) {
+      if(consumi[j].sent==0){
+        dtostrf(consumi[j].w,4,0,buffer0);
+        payload=consumi[j].t.timestamp()+"_"+buffer0;
+        Serial.print("MQTT DATA: ");
+        Serial.print(topic);
+        Serial.print(" -> ");
+        Serial.println(payload);
+        payload.toCharArray(buffer0,30);  
+        client.publish(topic, buffer0);
+        Consumi1[j].sent=1;
+        delay(200);
+      }
+    }
+  }else{
+    Serial.println("Non riesco a ricollegarmi :");
+    Serial.println("Scrivo su Flash e proverò tra un minuto"); 
+    // scrittura su sd
+  }  
+}
 
+void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
+  if(*dimI == 0){
+    Serial.println("Impulsi a vuoto carico!");
+    consumi[0].w=0;
+    consumi[0].t = rtc.now();
+    *dimC=1; 
+    } else{
+      j=0;
+      k=1;
+      prev_millis=impulsi[0].dur;
+      cur_ts=impulsi[0].t;
+      
+      for(i=1; i < *dimI; i++){
+        toll=(prev_millis/100);
+        if(impulsi[i].dur < (prev_millis-toll) || impulsi[i].dur > (prev_millis+toll)){
+          consumi[j].t=cur_ts;
+          consumi[j].w=3600*1000/prev_millis;
+          consumi[j].sent=false;
+          j++;
+          cur_ts=impulsi[i].t;
+          prev_millis=impulsi[i].dur; 
+          k=1;
+          consumo_b=true; 
+          }else{
+            prev_millis=(impulsi[i].dur+prev_millis*k)/(k+1);
+            k++;
+            consumo_b=false;
+          }
+      }
+
+      if(!consumo_b){
+        consumi[j].t=cur_ts;
+        consumi[j].w=3600*1000/prev_millis;  
+        consumi[j].sent=false;
+        j++;
+        cur_ts=impulsi[i].t;
+        prev_millis=impulsi[i].dur;
+      }
+      
+      impulsi[0].dur =impulsi[*dimI-1].dur;
+      impulsi[0].t   =impulsi[*dimI-1].t;
+      *dimI=1;
+      *dimC=j;
+    }
+}
+
+void loop() {
+  delay(60000);
+  convertToWatt(Impulsi1, Consumi1, &dimI1, &dimC1);
+  convertToWatt(Impulsi2, Consumi2, &dimI2, &dimC2);
+  convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
+  convertToWatt(Impulsi4, Consumi4, &dimI4, &dimC4);
+
+  sendMqttData(outTopic_Ap1, Consumi1, dimC1);
+  sendMqttData(outTopic_Ap2, Consumi2, dimC2);
+  sendMqttData(outTopic_Ap3, Consumi3, dimC3);
+  sendMqttData(outTopic_Ap4, Consumi4, dimC4);
 }
