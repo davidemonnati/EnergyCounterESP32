@@ -109,6 +109,7 @@ char* outTopic_Ap4 = "N/124";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+
 void setupWiFi() {
   Serial.printf("Connecting to: %s\n", ssid);
   WiFi.begin(ssid, password);
@@ -214,7 +215,12 @@ void setTimeInt( void * parameter ) {
   }
 }
 
-void sendMqttData(char* topic, consumo consumi[], int dim){
+String getTimestamp(DateTime dateTime) {
+  return String(dateTime.year()) + "-" + String(dateTime.month()) + "-" + String(dateTime.day()) 
+    + "T" + String(dateTime.hour()) + ":" + String(dateTime.minute()) + ":" +String(dateTime.second());;
+}
+
+void sendMqttData(char* topic, consumo consumi[], int *dim){
   char buffer0[30];
   String payload;
   int i=0;
@@ -228,10 +234,10 @@ void sendMqttData(char* topic, consumo consumi[], int dim){
   if (client.connected()) {
     Serial.println("Mi sono collegato al broker MQTT:");
     Serial.println("Invio vettori in corso...");
-    for(int j=0; j<dim; j++) {
+    for(int j=0; j<*dim; j++) {
       if(consumi[j].sent==0){
         dtostrf(consumi[j].w,4,0,buffer0);
-        payload=consumi[j].t.timestamp()+"_"+buffer0;
+        payload=getTimestamp(consumi[j].t)+"_"+buffer0;
         Serial.print("MQTT DATA: ");
         Serial.print(topic);
         Serial.print(" -> ");
@@ -242,6 +248,7 @@ void sendMqttData(char* topic, consumo consumi[], int dim){
         delay(200);
       }
     }
+    *dim=0;
   }else{
     Serial.println("Non riesco a ricollegarmi :");
     Serial.println("Scrivo su Flash e proverò tra un minuto"); 
@@ -302,8 +309,8 @@ void loop() {
   convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
   convertToWatt(Impulsi4, Consumi4, &dimI4, &dimC4);
 
-  sendMqttData(outTopic_Ap1, Consumi1, dimC1);
-  sendMqttData(outTopic_Ap2, Consumi2, dimC2);
-  sendMqttData(outTopic_Ap3, Consumi3, dimC3);
-  sendMqttData(outTopic_Ap4, Consumi4, dimC4);
+  sendMqttData(outTopic_Ap1, Consumi1, &dimC1);
+  sendMqttData(outTopic_Ap2, Consumi2, &dimC2);
+  sendMqttData(outTopic_Ap3, Consumi3, &dimC3);
+  sendMqttData(outTopic_Ap4, Consumi4, &dimC4);
 }
