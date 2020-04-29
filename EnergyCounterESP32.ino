@@ -1,9 +1,13 @@
 #include <WiFi.h>
 #include <NTPClient.h>
 #include <PubSubClient.h>
-
 #include <WiFiUdp.h>
-#include "RTClib.h"
+#include <RTClib.h>
+
+#include "include/Consumo.h"
+#include "include/Impulso.h"
+#include "include/ManageTime.h"
+
 
 TaskHandle_t Task1;
 RTC_DS1307 rtc;
@@ -14,17 +18,6 @@ unsigned long prev_millis;
 int toll = 0;
 DateTime cur_ts;
 bool consumo_b;
-  
-struct impulso {
-  DateTime t;
-  unsigned long dur;
-};
-
-struct consumo {
-  DateTime  t;
-  int     w;
-  bool    sent;
-};
 
 struct impulso Impulsi1[300];
 int dimI1 = 0;
@@ -100,7 +93,7 @@ const char* ssid     = "ssid";
 const char* password = "password";
 
 // Topic MQTT
-char* mqtt_server = "192.168.1.14";
+char* mqtt_server = "192.168.1.153";
 char* clientID = "Building0Test"; 
 char* outTopic_Ap1 = "N/121";
 char* outTopic_Ap2 = "N/122";
@@ -126,35 +119,12 @@ void setupWiFi() {
   }
 }
 
-void setupRTC() {
-  if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
-  }
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-
-  if (! rtc.isrunning())
-    Serial.println("RTC is NOT running!");
-}
-
-void syncTimeWithNTP() {
-  const char* ntpServer = "pool.ntp.org";
-  const long  gmtOffset_sec = 3600;
-  const int   daylightOffset_sec = 3600;
-
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  struct tm timeinfo;
-
-  if (getLocalTime(&timeinfo))
-    rtc.adjust(DateTime((timeinfo.tm_year - 100), timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
-}
-
 void setup() { 
   Serial.begin(115200);
-
+  
   setupWiFi();
-  setupRTC();
-  syncTimeWithNTP();
+  setupRTC(&rtc);
+  syncTimeWithNTP(&rtc);
   
   client.setServer(mqtt_server, 1883);
 
@@ -213,11 +183,6 @@ void setTimeInt( void * parameter ) {
       flag_ap4 = false;
     } 
   }
-}
-
-String getTimestamp(DateTime dateTime) {
-  return String(dateTime.year()) + "-" + String(dateTime.month()) + "-" + String(dateTime.day()) 
-    + "T" + String(dateTime.hour()) + ":" + String(dateTime.minute()) + ":" +String(dateTime.second());;
 }
 
 void sendMqttData(char* topic, consumo consumi[], int *dim){
