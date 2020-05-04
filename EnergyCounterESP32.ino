@@ -7,7 +7,7 @@
 #include "include/Consumo.h"
 #include "include/Impulso.h"
 #include "include/ManageTime.h"
-
+#include "include/DataLogger.h"
 
 TaskHandle_t Task1;
 RTC_DS1307 rtc;
@@ -93,7 +93,7 @@ const char* ssid     = "ssid";
 const char* password = "password";
 
 // Topic MQTT
-char* mqtt_server = "192.168.1.153";
+char* mqtt_server = "192.168.1.9";
 char* clientID = "Building0Test"; 
 char* outTopic_Ap1 = "N/121";
 char* outTopic_Ap2 = "N/122";
@@ -125,6 +125,7 @@ void setup() {
   setupWiFi();
   setupRTC(&rtc);
   syncTimeWithNTP(&rtc);
+  setupDataLogger();
   
   client.setServer(mqtt_server, 1883);
 
@@ -189,36 +190,29 @@ void sendMqttData(char* topic, consumo consumi[], int *dim){
   char buffer0[30];
   String payload;
   int i=0;
+  client.connect(clientID);
   
-  while ((!client.connected()) && (i<3)) {
-    Serial.println("Client disconnesso da MQTT.. provo la riconnessione :");
-    delay(1000);
-    client.connect(clientID);
-    i++;
-  }
-  if (client.connected()) {
-    Serial.println("Mi sono collegato al broker MQTT:");
-    Serial.println("Invio vettori in corso...");
-    for(int j=0; j<*dim; j++) {
-      if(consumi[j].sent==0){
-        dtostrf(consumi[j].w,4,0,buffer0);
-        payload=getTimestamp(consumi[j].t)+"_"+buffer0;
+  Serial.println("Invio vettori in corso...");
+  for(int j=0; j<*dim; j++) {
+    if(consumi[j].sent==0){
+      dtostrf(consumi[j].w,4,0,buffer0);
+      payload=getTimestamp(consumi[j].t)+"_"+buffer0;
+      payload.toCharArray(buffer0,30);
+      if (client.connected()) {
+        client.publish(topic, buffer0);
         Serial.print("MQTT DATA: ");
         Serial.print(topic);
         Serial.print(" -> ");
         Serial.println(payload);
-        payload.toCharArray(buffer0,30);  
-        client.publish(topic, buffer0);
-        Consumi1[j].sent=1;
-        delay(200);
+        delay(100);
+      }else {
+        Serial.println("Non riesco a ricollegarmi :");
+        writeDataFile(topic, buffer0);
       }
+      Consumi1[j].sent=true;
+     }
     }
     *dim=0;
-  }else{
-    Serial.println("Non riesco a ricollegarmi :");
-    Serial.println("Scrivo su Flash e proverò tra un minuto"); 
-    // scrittura su sd
-  }  
 }
 
 void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
@@ -267,8 +261,30 @@ void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
     }
 }
 
+void resendBackupData(){
+  char bufferTopic[6];
+  char bufferConsumption[30];
+  client.connect(clientID);
+  String buffer;
+  File readFile = SD.open("/consumptions_data.txt");
+  
+  if(readFile && client.connected()){
+    while (readFile.available()) {
+      buffer = readFile.readStringUntil('\n');
+      int ind1 = buffer.indexOf("|");
+      String topic = buffer.substring(0,ind1);
+      int ind2 = buffer.indexOf("\n");
+      String consumption = buffer.substring(ind1+1, ind2);
+      topic.toCharArray(bufferTopic, 6);
+      consumption.toCharArray(bufferConsumption, 30);
+      client.publish(bufferTopic, bufferConsumption);
+    }
+    SD.remove("/consumptions_data.txt");
+  }
+}
+
 void loop() {
-  delay(60000);
+  delay(180000);
   convertToWatt(Impulsi1, Consumi1, &dimI1, &dimC1);
   convertToWatt(Impulsi2, Consumi2, &dimI2, &dimC2);
   convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
@@ -278,4 +294,6 @@ void loop() {
   sendMqttData(outTopic_Ap2, Consumi2, &dimC2);
   sendMqttData(outTopic_Ap3, Consumi3, &dimC3);
   sendMqttData(outTopic_Ap4, Consumi4, &dimC4);
+
+  resendBackupData();
 }
