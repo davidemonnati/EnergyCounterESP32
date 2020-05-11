@@ -1,12 +1,25 @@
 #include <WiFi.h>
 #include <NTPClient.h>
 #include <PubSubClient.h>
-
 #include <WiFiUdp.h>
-#include "RTClib.h"
+#include <RTClib.h>
+
+#include "include/Consumo.h"
+#include "include/Impulso.h"
+#include "include/ManageTime.h"
+#include "include/DataLogger.h"
+#include "include/CaptivePortal.h"
 
 TaskHandle_t Task1;
+TaskHandle_t Task2;
+
 RTC_DS1307 rtc;
+AsyncWebServer webServer(80);
+int num_ssid = 0;
+String ssid_list[50];
+volatile boolean is_connected = false;
+volatile boolean setup_completed = false;
+volatile boolean sdcard_inserted = false;
 
 // =================== INTERRUPTS E CONSUMI =======================
 int i,j,k;
@@ -14,17 +27,6 @@ unsigned long prev_millis;
 int toll = 0;
 DateTime cur_ts;
 bool consumo_b;
-  
-struct impulso {
-  DateTime t;
-  unsigned long dur;
-};
-
-struct consumo {
-  DateTime  t;
-  int     w;
-  bool    sent;
-};
 
 struct impulso Impulsi1[300];
 int dimI1 = 0;
@@ -96,81 +98,89 @@ void IRAM_ATTR ap4_int() {
 }
 
 // =================== FINE INTERRUPTS E CONSUMI =======================
-const char* ssid     = "ssid";
-const char* password = "password";
 
 // Topic MQTT
-char* mqtt_server = "192.168.1.14";
-char* clientID = "Building0Test"; 
-char* outTopic_Ap1 = "N/121";
-char* outTopic_Ap2 = "N/122";
-char* outTopic_Ap3 = "N/123";
-char* outTopic_Ap4 = "N/124";
+String ssid;
+String username;
+String password;
+String WiFiEnc;
+char mqtt_server[15];
+char *clientID = "Building0Test";
+char outTopic_Ap1[10];
+char outTopic_Ap2[10];
+char outTopic_Ap3[10];
+char outTopic_Ap4[10];
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-
-void setupWiFi() {
-  Serial.printf("Connecting to: %s\n", ssid);
-  WiFi.begin(ssid, password);
-
-  while ( WiFi.status() != WL_CONNECTED ) {
-    delay ( 500 );
-    Serial.print ( "." );
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\nWiFi connected!\n");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
-}
-
-void setupRTC() {
-  if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
-  }
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-
-  if (! rtc.isrunning())
-    Serial.println("RTC is NOT running!");
-}
-
-void syncTimeWithNTP() {
-  const char* ntpServer = "pool.ntp.org";
-  const long  gmtOffset_sec = 3600;
-  const int   daylightOffset_sec = 3600;
-
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  struct tm timeinfo;
-
-  if (getLocalTime(&timeinfo))
-    rtc.adjust(DateTime((timeinfo.tm_year - 100), timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
-}
-
-void setup() { 
-  Serial.begin(115200);
-
-  setupWiFi();
-  setupRTC();
-  syncTimeWithNTP();
+boolean startWebServer() {
+  Serial.println("Starting web server...");
   
-  client.setServer(mqtt_server, 1883);
+  webServer.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(200, "text/html", index_page(num_ssid, ssid_list) );
+  });
+  
+  webServer.on("/connect", HTTP_POST, [] (AsyncWebServerRequest * request) {
+    int params = request->params();
+    String wifi_data[params];
+    for (int i = 0; i < params; i++) {
+      AsyncWebParameter* p = request->getParam(i);
 
-  Serial.print("ORA RTC: ");
-  Serial.println(rtc.now().timestamp());
+      if (p->isPost()) {
+        wifi_data[i] = p->value().c_str();
+      }
+    }
 
+    String ssid_to_string = wifi_data[0].substring(1, wifi_data[0].length());
+    String encryption;
+    
+    for (int i = 0; i < num_ssid; i++) {
+      if (ssid_list[i] == ssid_to_string.substring(0, ssid_to_string.length()-1)) {
+        encryption = getEncryptionType(WiFi.encryptionType(i));
+        break;
+      }
+    }
+    WiFiEnc = encryption;
+    wifi_data[3].toCharArray(mqtt_server, wifi_data[3].length()+1);
+    wifi_data[4].toCharArray(outTopic_Ap1, wifi_data[4].length()+1);
+    wifi_data[5].toCharArray(outTopic_Ap2, wifi_data[5].length()+1);
+    wifi_data[6].toCharArray(outTopic_Ap3, wifi_data[6].length()+1);
+    wifi_data[7].toCharArray(outTopic_Ap4, wifi_data[7].length()+1);
+
+    ssid = ssid_to_string.substring(0, wifi_data[0].length()-1);
+    password = wifi_data[2];
+
+    Serial.println("Disabling access point...");
+    request->send(200, "text/plain", "Connessione alla rete in corso...<br /><br />Modalità AP disabilitata." );
+    WiFi.softAPdisconnect(true);
+    is_connected = selectEncryptionType(encryption, ssid, wifi_data[1], wifi_data[2]);
+  });
+  webServer.begin();
+  Serial.println("Web server is on.");
+  return true;
+}
+
+void defineInterrupts(){
   pinMode(14, INPUT);
   pinMode(12, INPUT);
   pinMode(13, INPUT);
   pinMode(15, INPUT);
-
   attachInterrupt(digitalPinToInterrupt(14), ap1_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(12), ap2_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(13), ap3_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(15), ap4_int, FALLING);
+}
 
+void setupRoutines(){
+  Serial.println("Starting setup...");
+  setupRTC(&rtc);
+  syncTimeWithNTP(&rtc);
+
+  client.setServer(mqtt_server, 1883);
+  Serial.print("ORA RTC: ");
+  Serial.println(rtc.now().timestamp());
+
+  defineInterrupts();
   xTaskCreate (
     setTimeInt,    // Function that should be called
     "Task1",   // Name of the task (for debugging)
@@ -179,6 +189,66 @@ void setup() {
     1,               // Task priority
     NULL             // Task handle
   );
+  setup_completed = true;
+}
+
+void runTask2(void * parameter ){
+  for(;;){
+    if(is_connected && !setup_completed){
+      setupRoutines();
+    }
+    if(setup_completed){
+      if(sdcard_inserted)
+        saveSettingsToSdCard(WiFiEnc, ssid, username, password, mqtt_server, outTopic_Ap1, outTopic_Ap2, outTopic_Ap3, outTopic_Ap4);
+      
+      Serial.println("Setup completed.");
+      vTaskDelete(Task2);
+    }
+  }
+}
+
+void loadSettingsFromSDCard(){
+  int i = 0;
+  String configurationData[8];
+  File configFile = SD.open("/connection.config", FILE_READ);
+  if(configFile.available()){
+    while(configFile.available()){
+      configurationData[i] = configFile.readStringUntil('\n');
+      i++;
+    }
+    ssid = configurationData[0];
+    username = configurationData[1];
+    password = configurationData[2];
+    WiFiEnc = configurationData[3];
+    configurationData[4].toCharArray(mqtt_server, configurationData[4].length());
+    configurationData[5].toCharArray(outTopic_Ap1, configurationData[5].length());
+    configurationData[6].toCharArray(outTopic_Ap2, configurationData[6].length());
+    configurationData[7].toCharArray(outTopic_Ap3, configurationData[7].length());
+    configurationData[8].toCharArray(outTopic_Ap4, configurationData[8].length());
+  }
+}
+
+void setup() { 
+  Serial.begin(115200);
+  sdcard_inserted = setupDataLogger();
+  if(searchConfigurationFile()){
+    Serial.println("Configuration file found\nLoading settings from SD card...");
+    loadSettingsFromSDCard();
+    is_connected = selectEncryptionType(WiFiEnc.substring(0, WiFiEnc.length()-1), ssid.substring(0, ssid.length()), username.substring(0, username.length()-1),
+      password.substring(0, password.length()-1));
+    
+    setupRoutines();
+  }else{
+    Serial.println("Configuration file doesn't exists\nStarting captive portal...");
+    if(!sdcard_inserted){
+      Serial.println("SD card not detected, the configuration will not be saved.");
+    }
+    scanNetwork(&num_ssid, ssid_list);
+    printNetwork(num_ssid, ssid_list);
+    setupNetwork();
+    startWebServer();
+    xTaskCreate (runTask2, "Task2", 10000, NULL, 2, NULL);
+  }
 }
 
 void setTimeInt( void * parameter ) {
@@ -215,45 +285,35 @@ void setTimeInt( void * parameter ) {
   }
 }
 
-String getTimestamp(DateTime dateTime) {
-  return String(dateTime.year()) + "-" + String(dateTime.month()) + "-" + String(dateTime.day()) 
-    + "T" + String(dateTime.hour()) + ":" + String(dateTime.minute()) + ":" +String(dateTime.second());;
-}
-
 void sendMqttData(char* topic, consumo consumi[], int *dim){
   char buffer0[30];
   String payload;
   int i=0;
+  client.connect(clientID);
   
-  while ((!client.connected()) && (i<3)) {
-    Serial.println("Client disconnesso da MQTT.. provo la riconnessione :");
-    delay(1000);
-    client.connect(clientID);
-    i++;
-  }
-  if (client.connected()) {
-    Serial.println("Mi sono collegato al broker MQTT:");
-    Serial.println("Invio vettori in corso...");
-    for(int j=0; j<*dim; j++) {
-      if(consumi[j].sent==0){
-        dtostrf(consumi[j].w,4,0,buffer0);
-        payload=getTimestamp(consumi[j].t)+"_"+buffer0;
+  Serial.println("Invio vettori in corso...");
+  for(int j=0; j<*dim; j++) {
+    if(consumi[j].sent==0){
+      dtostrf(consumi[j].w,4,0,buffer0);
+      payload=getTimestamp(consumi[j].t)+"_"+buffer0;
+      payload.toCharArray(buffer0,30);
+      if (client.connected()) {
+        client.publish(topic, buffer0);
         Serial.print("MQTT DATA: ");
         Serial.print(topic);
         Serial.print(" -> ");
         Serial.println(payload);
-        payload.toCharArray(buffer0,30);  
-        client.publish(topic, buffer0);
-        Consumi1[j].sent=1;
-        delay(200);
+        delay(100);
+      }else {
+        Serial.println("Non riesco a ricollegarmi.");
+        if(sdcard_inserted){
+          writeDataFile(topic, buffer0); 
+        }
       }
+      Consumi1[j].sent=true;
+     }
     }
     *dim=0;
-  }else{
-    Serial.println("Non riesco a ricollegarmi :");
-    Serial.println("Scrivo su Flash e proverò tra un minuto"); 
-    // scrittura su sd
-  }  
 }
 
 void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
@@ -303,14 +363,19 @@ void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
 }
 
 void loop() {
-  delay(60000);
-  convertToWatt(Impulsi1, Consumi1, &dimI1, &dimC1);
-  convertToWatt(Impulsi2, Consumi2, &dimI2, &dimC2);
-  convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
-  convertToWatt(Impulsi4, Consumi4, &dimI4, &dimC4);
+  delay(180000);
+  if(is_connected && setup_completed){
+    convertToWatt(Impulsi1, Consumi1, &dimI1, &dimC1);
+    convertToWatt(Impulsi2, Consumi2, &dimI2, &dimC2);
+    convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
+    convertToWatt(Impulsi4, Consumi4, &dimI4, &dimC4);
+  
+    sendMqttData(outTopic_Ap1, Consumi1, &dimC1);
+    sendMqttData(outTopic_Ap2, Consumi2, &dimC2);
+    sendMqttData(outTopic_Ap3, Consumi3, &dimC3);
+    sendMqttData(outTopic_Ap4, Consumi4, &dimC4);
 
-  sendMqttData(outTopic_Ap1, Consumi1, &dimC1);
-  sendMqttData(outTopic_Ap2, Consumi2, &dimC2);
-  sendMqttData(outTopic_Ap3, Consumi3, &dimC3);
-  sendMqttData(outTopic_Ap4, Consumi4, &dimC4);
+    if(sdcard_inserted)
+      resendBackupData(&client, clientID);
+  }
 }
