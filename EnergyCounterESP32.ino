@@ -4,8 +4,8 @@
 #include <WiFiUdp.h>
 #include <RTClib.h>
 
-#include "include/Consumo.h"
-#include "include/Impulso.h"
+#include "include/Consumption.h"
+#include "include/Impulse.h"
 #include "include/ManageTime.h"
 #include "include/DataLogger.h"
 #include "include/CaptivePortal.h"
@@ -26,26 +26,26 @@ int i,j,k;
 unsigned long prev_millis;
 int toll = 0;
 DateTime cur_ts;
-bool consumo_b;
+bool consumption_b;
 
-struct impulso Impulsi1[300];
+struct impulse impulse1[300];
 int dimI1 = 0;
-struct consumo Consumi1[300];
+struct consumption consumption1[300];
 int dimC1 = 0;
 
-struct impulso Impulsi2[300];
+struct impulse impulse2[300];
 int dimI2 = 0;
-struct consumo Consumi2[300];
+struct consumption consumption2[300];
 int dimC2 = 0;
 
-struct impulso Impulsi3[300];
+struct impulse impulse3[300];
 int dimI3 = 0;
-struct consumo Consumi3[300];
+struct consumption consumption3[300];
 int dimC3 = 0;
 
-struct impulso Impulsi4[300];
+struct impulse impulse4[300];
 int dimI4 = 0;
-struct consumo Consumi4[300];
+struct consumption consumption4[300];
 int dimC4 = 0;
 
 unsigned long t1_1 = 0;
@@ -61,7 +61,7 @@ void IRAM_ATTR ap1_int() {
   t1_1 = millis();
   Tt1 = (t1_1 - t1_0);
   if (Tt1 > 1000) {
-    Impulsi1[dimI1].dur = Tt1;
+    impulse1[dimI1].dur = Tt1;
     t1_0 = t1_1;
     flag_ap1 = true;
   }
@@ -71,7 +71,7 @@ void IRAM_ATTR ap2_int() {
   t1_1 = millis();
   Tt1 = (t1_1 - t1_0);
   if (Tt1 > 1000) {
-    Impulsi2[dimI2].dur = Tt1;
+    impulse2[dimI2].dur = Tt1;
     t1_0 = t1_1;
     flag_ap2 = true;
   }
@@ -81,7 +81,7 @@ void IRAM_ATTR ap3_int() {
   t1_1 = millis();
   Tt1 = (t1_1 - t1_0);
   if (Tt1 > 1000) {
-    Impulsi3[dimI3].dur = Tt1;
+    impulse3[dimI3].dur = Tt1;
     t1_0 = t1_1;
     flag_ap3 = true;
   }
@@ -91,7 +91,7 @@ void IRAM_ATTR ap4_int() {
   t1_1 = millis();
   Tt1 = (t1_1 - t1_0);
   if (Tt1 > 1000) {
-    Impulsi4[dimI4].dur = Tt1;
+    impulse4[dimI4].dur = Tt1;
     t1_0 = t1_1;
     flag_ap4 = true;
   }
@@ -257,35 +257,35 @@ void setTimeInt( void * parameter ) {
   for (;;) {
     if (flag_ap1) {
       Serial.println("interrupt 1");
-      Impulsi1[dimI1].t = rtc.now();
+      impulse1[dimI1].t = rtc.now();
       dimI1++;
       flag_ap1 = false;
     }
 
     if (flag_ap2) {
       Serial.println("interrupt 2");
-      Impulsi2[dimI2].t = rtc.now();
+      impulse2[dimI2].t = rtc.now();
       dimI2++;
       flag_ap2 = false;
     }
 
     if (flag_ap3) {
       Serial.println("interrupt 3");
-      Impulsi3[dimI3].t = rtc.now();
+      impulse3[dimI3].t = rtc.now();
       dimI3++;
       flag_ap3 = false;
     }
 
     if (flag_ap4) {
       Serial.println("interrupt 4");
-      Impulsi4[dimI4].t = rtc.now();
+      impulse4[dimI4].t = rtc.now();
       dimI4++;
       flag_ap4 = false;
     } 
   }
 }
 
-void sendMqttData(char* topic, consumo consumi[], int *dim){
+void sendMqttData(char* topic, consumption consumi[], int *dim){
   char buffer0[30];
   String payload;
   int i=0;
@@ -310,13 +310,13 @@ void sendMqttData(char* topic, consumo consumi[], int *dim){
           writeDataFile(topic, buffer0); 
         }
       }
-      Consumi1[j].sent=true;
+      consumption1[j].sent=true;
      }
     }
     *dim=0;
 }
 
-void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
+void convertToWatt(impulse *impulsi, consumption consumi[], int *dimI, int *dimC) {
   if(*dimI == 0){
     Serial.println("Impulsi a vuoto carico!");
     consumi[0].w=0;
@@ -338,15 +338,15 @@ void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
           cur_ts=impulsi[i].t;
           prev_millis=impulsi[i].dur; 
           k=1;
-          consumo_b=true; 
+          consumption_b=true; 
           }else{
             prev_millis=(impulsi[i].dur+prev_millis*k)/(k+1);
             k++;
-            consumo_b=false;
+            consumption_b=false;
           }
       }
 
-      if(!consumo_b){
+      if(!consumption_b){
         consumi[j].t=cur_ts;
         consumi[j].w=3600*1000/prev_millis;  
         consumi[j].sent=false;
@@ -365,15 +365,15 @@ void convertToWatt(impulso *impulsi, consumo consumi[], int *dimI, int *dimC) {
 void loop() {
   delay(180000);
   if(is_connected && setup_completed){
-    convertToWatt(Impulsi1, Consumi1, &dimI1, &dimC1);
-    convertToWatt(Impulsi2, Consumi2, &dimI2, &dimC2);
-    convertToWatt(Impulsi3, Consumi3, &dimI3, &dimC3);
-    convertToWatt(Impulsi4, Consumi4, &dimI4, &dimC4);
+    convertToWatt(impulse1, consumption1, &dimI1, &dimC1);
+    convertToWatt(impulse2, consumption2, &dimI2, &dimC2);
+    convertToWatt(impulse3, consumption3, &dimI3, &dimC3);
+    convertToWatt(impulse4, consumption4, &dimI4, &dimC4);
   
-    sendMqttData(outTopic_Ap1, Consumi1, &dimC1);
-    sendMqttData(outTopic_Ap2, Consumi2, &dimC2);
-    sendMqttData(outTopic_Ap3, Consumi3, &dimC3);
-    sendMqttData(outTopic_Ap4, Consumi4, &dimC4);
+    sendMqttData(outTopic_Ap1, consumption1, &dimC1);
+    sendMqttData(outTopic_Ap2, consumption2, &dimC2);
+    sendMqttData(outTopic_Ap3, consumption3, &dimC3);
+    sendMqttData(outTopic_Ap4, consumption4, &dimC4);
 
     if(sdcard_inserted)
       resendBackupData(&client, clientID);
