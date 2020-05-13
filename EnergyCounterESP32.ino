@@ -52,10 +52,15 @@ unsigned long t1_1 = 0;
 unsigned long Tt1 = 0;
 unsigned long t1_0 = 0;
 
+volatile bool flag_reset = false;
 volatile bool flag_ap1 = false;
 volatile bool flag_ap2 = false;
 volatile bool flag_ap3 = false;
 volatile bool flag_ap4 = false;
+
+void IRAM_ATTR ap_reset(){
+  flag_reset = true;
+}
 
 void IRAM_ATTR ap1_int() {
   t1_1 = millis();
@@ -161,14 +166,35 @@ boolean startWebServer() {
 }
 
 void defineInterrupts(){
-  pinMode(14, INPUT);
   pinMode(12, INPUT);
   pinMode(13, INPUT);
+  pinMode(14, INPUT);
   pinMode(15, INPUT);
-  attachInterrupt(digitalPinToInterrupt(14), ap1_int, FALLING);
+  pinMode(16, INPUT);
   attachInterrupt(digitalPinToInterrupt(12), ap2_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(13), ap3_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14), ap1_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(15), ap4_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(16), ap_reset, FALLING);
+}
+
+void disableInterrupts(){
+  detachInterrupt(digitalPinToInterrupt(12));
+  detachInterrupt(digitalPinToInterrupt(13));
+  detachInterrupt(digitalPinToInterrupt(14));
+  detachInterrupt(digitalPinToInterrupt(15));
+  detachInterrupt(digitalPinToInterrupt(16));
+}
+
+void reset(){
+  Serial.println("Deleting configuration file...");
+  if(searchConfigurationFile())
+    SD.remove("/connection.config");
+  
+  SD.remove("/consumptions_data.txt");
+  Serial.println("Restarting...");
+  delay(1000);
+  ESP.restart();
 }
 
 void setupRoutines(){
@@ -281,7 +307,13 @@ void setTimeInt( void * parameter ) {
       impulse4[dimI4].t = rtc.now();
       dimI4++;
       flag_ap4 = false;
-    } 
+    }
+
+    if(flag_reset){
+      Serial.println("Resetting...");
+      disableInterrupts();
+      reset();
+    }
   }
 }
 
