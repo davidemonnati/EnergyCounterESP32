@@ -235,7 +235,7 @@ void runTask2(void * parameter ){
 
 void loadSettingsFromSDCard(){
   int i = 0;
-  String configurationData[8];
+  String configurationData[9];
   File configFile = SD.open("/connection.config", FILE_READ);
   if(configFile.available()){
     while(configFile.available()){
@@ -251,6 +251,7 @@ void loadSettingsFromSDCard(){
     configurationData[6].toCharArray(outTopic_Ap2, configurationData[6].length());
     configurationData[7].toCharArray(outTopic_Ap3, configurationData[7].length());
     configurationData[8].toCharArray(outTopic_Ap4, configurationData[8].length());
+    configFile.close();
   }
 }
 
