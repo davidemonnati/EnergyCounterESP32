@@ -3,10 +3,7 @@
 
 #include <SD.h>
 #include <SPI.h>
-#include <AsyncWebSocket.h>
-#include <AsyncWebSynchronization.h>
 #include <ESPAsyncWebServer.h>
-#include <AsyncTCP.h>
 #include "esp_wpa2.h" //wpa2 library for connections to Enterprise networks
 
 String index_page(int num_ssid, String ssid_list[50]);

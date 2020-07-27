@@ -153,12 +153,13 @@ boolean startWebServer() {
     wifi_data[7].toCharArray(outTopic_Ap4, wifi_data[7].length()+1);
 
     ssid = ssid_to_string.substring(0, wifi_data[0].length()-1);
+    username = wifi_data[1];
     password = wifi_data[2];
 
     Serial.println("Disabling access point...");
-    request->send(200, "text/plain", "Connessione alla rete in corso...<br /><br />Modalità AP disabilitata." );
     WiFi.softAPdisconnect(true);
     is_connected = selectEncryptionType(encryption, ssid, wifi_data[1], wifi_data[2]);
+    request->send(200, "text/plain", "Connessione alla rete in corso...<br /><br />Modalità AP disabilitata." );
   });
   webServer.begin();
   Serial.println("Web server is on.");

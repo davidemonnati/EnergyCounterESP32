@@ -1,14 +1,14 @@
 #include "include/Captiveportal.h"
 
-const char *ssidAP = "EnergyConunterESP32 AP";
+const char *ssidAP = "EnergyCounterESP32 AP";
 
 String index_page(int num_ssid, String ssid_list[50]) {
   String header_page = R"(
     <!DOCTYPE HTML>
     <html>
-    <head> <title>ESP32 async web server</title> </head>
+    <head> <title>ESP32 Configuration Panel</title> </head>
     <body>
-    <h1>ESP32 async web server</h1>
+    <h1>Configuration panel</h1>
     <p>Energy counter configuration panel</p>
     <form action="/connect" method="post">
       SSID:<br>
