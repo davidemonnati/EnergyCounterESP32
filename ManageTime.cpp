@@ -11,7 +11,6 @@ void setupRTC(RTC_DS1307 *rtc) {
     Serial.println("RTC is NOT running!");
 }
 
-
 void syncTimeWithNTP(RTC_DS1307 *rtc) {
   const char* ntpServer = "pool.ntp.org";
   const long  gmtOffset_sec = 3600;
@@ -22,7 +21,6 @@ void syncTimeWithNTP(RTC_DS1307 *rtc) {
 
   if (getLocalTime(&timeinfo))
     rtc->adjust(DateTime((timeinfo.tm_year - 100), timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
-   
 }
 
 String getTimestamp(DateTime dateTime) {

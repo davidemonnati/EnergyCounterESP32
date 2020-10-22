@@ -9,9 +9,11 @@
 #include "include/ManageTime.h"
 #include "include/DataLogger.h"
 #include "include/CaptivePortal.h"
+#include "include/RGBLed.h"
 
 TaskHandle_t Task1;
 TaskHandle_t Task2;
+TaskHandle_t Task3;
 
 RTC_DS1307 rtc;
 AsyncWebServer webServer(80);
@@ -122,7 +124,7 @@ boolean startWebServer() {
   Serial.println("Starting web server...");
   
   webServer.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
-    request->send(200, "text/html", index_page(num_ssid, ssid_list) );
+    request->send(200, "text/html", indexPage(num_ssid, ssid_list) );
   });
   
   webServer.on("/connect", HTTP_POST, [] (AsyncWebServerRequest * request) {
@@ -171,12 +173,12 @@ void defineInterrupts(){
   pinMode(13, INPUT);
   pinMode(14, INPUT);
   pinMode(15, INPUT);
-  pinMode(16, INPUT);
+  pinMode(27, INPUT);
   attachInterrupt(digitalPinToInterrupt(12), ap2_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(13), ap3_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(14), ap1_int, FALLING);
   attachInterrupt(digitalPinToInterrupt(15), ap4_int, FALLING);
-  attachInterrupt(digitalPinToInterrupt(16), ap_reset, FALLING);
+  attachInterrupt(digitalPinToInterrupt(27), ap_reset, FALLING);
 }
 
 void disableInterrupts(){
@@ -184,7 +186,7 @@ void disableInterrupts(){
   detachInterrupt(digitalPinToInterrupt(13));
   detachInterrupt(digitalPinToInterrupt(14));
   detachInterrupt(digitalPinToInterrupt(15));
-  detachInterrupt(digitalPinToInterrupt(16));
+  detachInterrupt(digitalPinToInterrupt(27));
 }
 
 void reset(){
@@ -217,6 +219,7 @@ void setupRoutines(){
     NULL             // Task handle
   );
   setup_completed = true;
+  Serial.println("Setup completed");
 }
 
 void runTask2(void * parameter ){
@@ -225,10 +228,10 @@ void runTask2(void * parameter ){
       setupRoutines();
     }
     if(setup_completed){
-      if(sdcard_inserted)
+      if(sdcard_inserted){
         saveSettingsToSdCard(WiFiEnc, ssid, username, password, mqtt_server, outTopic_Ap1, outTopic_Ap2, outTopic_Ap3, outTopic_Ap4);
+      }
       
-      Serial.println("Setup completed.");
       vTaskDelete(Task2);
     }
   }
@@ -256,8 +259,51 @@ void loadSettingsFromSDCard(){
   }
 }
 
+void manageLed(){
+  setupLed();
+  xTaskCreate(ledTask, "Task3", 2048, NULL, 3, NULL);
+}
+
+void ledTask(void * parameter){
+  for(;;){
+    if(!setup_completed){
+      setBlueLight();
+    }
+    
+    if(setup_completed && WiFi.status() == WL_CONNECTED){
+      setGreenLight();
+    }
+
+    if(WiFi.status() == WL_CONNECTED && !setup_completed){
+      turnOffLed();
+      delay(200);
+      setBlueLight();
+    }
+
+    if(WiFi.status() == WL_CONNECTED && !setup_completed && !rtc.isrunning()){
+      setRedLight();
+      delay(200);
+      setBlueLight();
+    }
+
+    if(setup_completed && WiFi.status() == WL_DISCONNECTED){
+      setRedLight();
+      WiFi.reconnect();
+    }
+
+    if(setup_completed && !rtc.isrunning()){
+      setRedLight();
+      delay(300);
+      setGreenLight();
+    }
+    
+    delay(1000);
+  }
+}
+
 void setup() { 
   Serial.begin(115200);
+  manageLed();
   sdcard_inserted = setupDataLogger();
   if(searchConfigurationFile()){
     Serial.println("Configuration file found\nLoading settings from SD card...");
@@ -271,8 +317,7 @@ void setup() {
     if(!sdcard_inserted){
       Serial.println("SD card not detected, the configuration will not be saved.");
     }
-    scanNetwork(&num_ssid, ssid_list);
-    printNetwork(num_ssid, ssid_list);
+    scanNetworks(&num_ssid, ssid_list);
     setupNetwork();
     startWebServer();
     xTaskCreate (runTask2, "Task2", 10000, NULL, 2, NULL);
@@ -341,7 +386,7 @@ void sendMqttData(char* topic, consumption consumi[], int *dim){
       }else {
         Serial.println("Non riesco a ricollegarmi.");
         if(sdcard_inserted){
-          writeDataFile(topic, buffer0); 
+          writeConsumptionToFile(topic, buffer0); 
         }
       }
       consumption1[j].sent=true;

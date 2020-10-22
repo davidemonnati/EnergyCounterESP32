@@ -1,8 +1,8 @@
-#include "include/Captiveportal.h"
+#include "include/CaptivePortal.h"
 
 const char *ssidAP = "EnergyCounterESP32 AP";
 
-String index_page(int num_ssid, String ssid_list[50]) {
+String indexPage(int num_ssid, String ssid_list[50]) {
   String header_page = R"(
     <!DOCTYPE HTML>
     <html>
@@ -41,7 +41,7 @@ String index_page(int num_ssid, String ssid_list[50]) {
   </body>
   </html>)";
 
-  return header_page + printNetwork(num_ssid, ssid_list) + auth_form + footer_page;
+  return header_page + getNetworks(num_ssid, ssid_list) + auth_form + footer_page;
 }
 
 void setupNetwork(){
@@ -49,7 +49,7 @@ void setupNetwork(){
   WiFi.softAP(ssidAP);
 }
 
-void scanNetwork(int *num_ssid, String ssid_list[50]) {
+void scanNetworks(int *num_ssid, String ssid_list[50]) {
   Serial.println("*** Scan Networks ***");
   *num_ssid = WiFi.scanNetworks();
   if ( *num_ssid == -1 ) {
@@ -79,14 +79,14 @@ boolean selectEncryptionType(String encryption, String ssid, String username, St
   char passwordToCharArray[50];
   ssid.toCharArray(ssidToCharArray, ssid.length());
   if (encryption.equals("Open")) {
-    return connect_open_network(ssidToCharArray);
+    return connectOpenNetwork(ssidToCharArray);
   }else if (encryption.equals("WPA2_Enterprise")) {
     username.toCharArray(usernameToCharArray, username.length()+1);
     password.toCharArray(passwordToCharArray, password.length()+1);
-    return connect_wpa2_enterprise(ssidToCharArray, usernameToCharArray, passwordToCharArray);
+    return connectWpa2Enterprise(ssidToCharArray, usernameToCharArray, passwordToCharArray);
   }else {
     password.toCharArray(passwordToCharArray, password.length()+1);
-    return connect_wpa(ssidToCharArray, passwordToCharArray);
+    return connectWpa(ssidToCharArray, passwordToCharArray);
   }
 }
 
@@ -109,7 +109,7 @@ String getEncryptionType(wifi_auth_mode_t encryptionType) {
   }
 }
 
-String printNetwork(int num_ssid, String ssid_list[50]) {
+String getNetworks(int num_ssid, String ssid_list[50]) {
   String list;
   for (int i = 0; i < num_ssid; i++) {
     list += "<option value=' " + WiFi.SSID(i) + " '>" + WiFi.SSID(i) + ": " + getEncryptionType(WiFi.encryptionType(i)) + " </option>";
@@ -117,7 +117,7 @@ String printNetwork(int num_ssid, String ssid_list[50]) {
   return list;
 }
 
-boolean connect_open_network(char* ssid) {
+boolean connectOpenNetwork(char* ssid) {
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid);
@@ -134,7 +134,7 @@ boolean connect_open_network(char* ssid) {
   return true;
 }
 
-boolean connect_wpa(char* ssid, char* password) {
+boolean connectWpa(char* ssid, char* password) {
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
@@ -151,7 +151,7 @@ boolean connect_wpa(char* ssid, char* password) {
   return true;
 }
 
-boolean connect_wpa2_enterprise(char* ssid, char* username, char* password) {
+boolean connectWpa2Enterprise(char* ssid, char* username, char* password) {
   Serial.print("Connecting to ");
   Serial.println(ssid);
   
