@@ -54,6 +54,18 @@ unsigned long t1_1 = 0;
 unsigned long Tt1 = 0;
 unsigned long t1_0 = 0;
 
+unsigned long t2_1 = 0;
+unsigned long Tt2 = 0;
+unsigned long t2_0 = 0;
+
+unsigned long t3_1 = 0;
+unsigned long Tt3 = 0;
+unsigned long t3_0 = 0;
+
+unsigned long t4_1 = 0;
+unsigned long Tt4 = 0;
+unsigned long t4_0 = 0;
+
 volatile bool flag_reset = false;
 volatile bool flag_ap1 = false;
 volatile bool flag_ap2 = false;
@@ -75,31 +87,31 @@ void IRAM_ATTR ap1_int() {
 }
 
 void IRAM_ATTR ap2_int() {
-  t1_1 = millis();
-  Tt1 = (t1_1 - t1_0);
-  if (Tt1 > 1000) {
-    impulse2[dimI2].dur = Tt1;
-    t1_0 = t1_1;
+  t2_1 = millis();
+  Tt2 = (t2_1 - t2_0);
+  if (Tt2 > 1000) {
+    impulse2[dimI2].dur = Tt2;
+    t2_0 = t2_1;
     flag_ap2 = true;
   }
 }
 
 void IRAM_ATTR ap3_int() {
-  t1_1 = millis();
-  Tt1 = (t1_1 - t1_0);
-  if (Tt1 > 1000) {
-    impulse3[dimI3].dur = Tt1;
-    t1_0 = t1_1;
+  t3_1 = millis();
+  Tt3 = (t3_1 - t3_0);
+  if (Tt3 > 1000) {
+    impulse3[dimI3].dur = Tt3;
+    t3_0 = t3_1;
     flag_ap3 = true;
   }
 }
 
 void IRAM_ATTR ap4_int() {
-  t1_1 = millis();
-  Tt1 = (t1_1 - t1_0);
-  if (Tt1 > 1000) {
-    impulse4[dimI4].dur = Tt1;
-    t1_0 = t1_1;
+  t4_1 = millis();
+  Tt4 = (t4_1 - t4_0);
+  if (Tt4 > 1000) {
+    impulse4[dimI4].dur = Tt4;
+    t4_0 = t4_1;
     flag_ap4 = true;
   }
 }
@@ -169,24 +181,24 @@ boolean startWebServer() {
 }
 
 void defineInterrupts(){
-  pinMode(12, INPUT);
-  pinMode(13, INPUT);
-  pinMode(14, INPUT);
-  pinMode(15, INPUT);
-  pinMode(27, INPUT);
-  attachInterrupt(digitalPinToInterrupt(12), ap2_int, FALLING);
-  attachInterrupt(digitalPinToInterrupt(13), ap3_int, FALLING);
-  attachInterrupt(digitalPinToInterrupt(14), ap1_int, FALLING);
-  attachInterrupt(digitalPinToInterrupt(15), ap4_int, FALLING);
-  attachInterrupt(digitalPinToInterrupt(27), ap_reset, FALLING);
+  pinMode(35, INPUT);
+  pinMode(32, INPUT);
+  pinMode(33, INPUT);
+  pinMode(25, INPUT);
+  pinMode(34, INPUT);
+  attachInterrupt(digitalPinToInterrupt(35), ap1_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(32), ap2_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(33), ap3_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(25), ap4_int, FALLING);
+  attachInterrupt(digitalPinToInterrupt(34), ap_reset, FALLING);
 }
 
 void disableInterrupts(){
-  detachInterrupt(digitalPinToInterrupt(12));
-  detachInterrupt(digitalPinToInterrupt(13));
-  detachInterrupt(digitalPinToInterrupt(14));
-  detachInterrupt(digitalPinToInterrupt(15));
-  detachInterrupt(digitalPinToInterrupt(27));
+  detachInterrupt(digitalPinToInterrupt(35));
+  detachInterrupt(digitalPinToInterrupt(32));
+  detachInterrupt(digitalPinToInterrupt(33));
+  detachInterrupt(digitalPinToInterrupt(25));
+  detachInterrupt(digitalPinToInterrupt(34));
 }
 
 void reset(){
@@ -403,35 +415,16 @@ void convertToWatt(impulse *impulsi, consumption consumi[], int *dimI, int *dimC
     *dimC=1; 
     } else{
       j=0;
-      k=1;
       prev_millis=impulsi[0].dur;
       cur_ts=impulsi[0].t;
       
       for(i=1; i < *dimI; i++){
-        toll=(prev_millis/100);
-        if(impulsi[i].dur < (prev_millis-toll) || impulsi[i].dur > (prev_millis+toll)){
           consumi[j].t=cur_ts;
           consumi[j].w=3600*1000/prev_millis;
           consumi[j].sent=false;
           j++;
           cur_ts=impulsi[i].t;
-          prev_millis=impulsi[i].dur; 
-          k=1;
-          consumption_b=true; 
-          }else{
-            prev_millis=(impulsi[i].dur+prev_millis*k)/(k+1);
-            k++;
-            consumption_b=false;
-          }
-      }
-
-      if(!consumption_b){
-        consumi[j].t=cur_ts;
-        consumi[j].w=3600*1000/prev_millis;  
-        consumi[j].sent=false;
-        j++;
-        cur_ts=impulsi[i].t;
-        prev_millis=impulsi[i].dur;
+          prev_millis=impulsi[i].dur;
       }
       
       impulsi[0].dur =impulsi[*dimI-1].dur;
