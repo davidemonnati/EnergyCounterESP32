@@ -11,7 +11,7 @@ boolean setupDataLogger(){
   return true;
 }
 
-void writeDataFile(char* topic, char* data) {
+void writeConsumptionToFile(char* topic, char* data) {
   File dataFile = SD.open("/consumptions_data.txt", FILE_APPEND);
   
   char consumption[60];
